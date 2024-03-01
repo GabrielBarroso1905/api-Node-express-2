@@ -1,15 +1,15 @@
-import livros from "../models/Livro.js";
+import NaoEncontrado from "../erros/NaoEncontrado.js";
+import { autores, livros } from "../models/index.js";
 
 class LivroController {
 
   static listarLivros = async (req, res, next) => {
     try {
-      
-      const livrosResultado = await livros.find()
-        .populate("autor")
-        .exec();
+      const buscaLivros = livros.find();
 
-      res.status(200).json(livrosResultado);
+      req.resultado = buscaLivros;
+
+      next();
     } catch (erro) {
       next(erro);
     }
@@ -17,20 +17,23 @@ class LivroController {
 
   static listarLivroPorId = async (req, res, next) => {
     try {
-     
       const id = req.params.id;
 
-      const livroResultados = await livros.findById(id)
+      const livroResultado = await livros.findById(id)
         .populate("autor", "nome")
         .exec();
 
-      res.status(200).send(livroResultados);
+      if (livroResultado !== null) {
+        res.status(200).send(livroResultado);
+      } else {
+        next(new NaoEncontrado("Id do livro não localizado."));
+      }
     } catch (erro) {
       next(erro);
     }
   };
 
-  static cadastrarLivro = async (req, res,next) => {
+  static cadastrarLivro = async (req, res, next) => {
     try {
       let livro = new livros(req.body);
 
@@ -42,45 +45,85 @@ class LivroController {
     }
   };
 
-  static atualizarLivro = async (req, res,next) => {
+  static atualizarLivro = async (req, res, next) => {
+    try {
+      const id = req.params.id;
+    
+      const livroResultado = await livros.findByIdAndUpdate(id, {$set: req.body});
+
+      if (livroResultado !== null) {
+        res.status(200).send({message: "Livro atualizado com sucesso"});
+      } else {
+        next(new NaoEncontrado("Id do livro não localizado."));
+      }
+    } catch (erro) {
+      next(erro);
+    }
+  };
+
+  static excluirLivro = async (req, res, next) => {
     try {
       const id = req.params.id;
 
-      await livros.findByIdAndUpdate(id, {$set: req.body});
+      const livroResultado = await livros.findByIdAndDelete(id);
 
-      res.status(200).send({message: "Livro atualizado com sucesso"});
+      if (livroResultado !== null) {
+        res.status(200).send({message: "Livro removido com sucesso"});
+      } else {
+        next(new NaoEncontrado("Id do livro não localizado."));
+      }
     } catch (erro) {
       next(erro);
     }
   };
 
-  static excluirLivro = async (req, res,next) => {
+  static listarLivroPorFiltro = async (req, res, next) => {
     try {
-      const id = req.params.id;
+      const busca = await processaBusca(req.query);
 
-      await livros.findByIdAndDelete(id);
+      if (busca !== null) {
+        const livrosResultado = livros
+          .find(busca)
+          .populate("autor");
 
-      res.status(200).send({message: "Livro removido com sucesso"});
+        req.resultado = livrosResultado;
+
+        next();
+      } else {
+        res.status(200).send([]);
+      }
     } catch (erro) {
       next(erro);
     }
   };
+}
 
-  static listarLivroPorEditora = async (req, res,next) => {
-    try {
+async function processaBusca(parametros) {
+  const { editora, titulo, minPaginas, maxPaginas, nomeAutor } = parametros;
 
-      const editora = req.query.editora;
+  let busca = {};
 
-      const livrosResultado = await livros.find({"editora": editora});
+  if (editora) busca.editora = editora;
+  if (titulo) busca.titulo = { $regex: titulo, $options: "i" };
 
-      res.status(200).send(livrosResultado);
-    } catch (erro) {
-      next(erro);
+  if (minPaginas || maxPaginas) busca.numeroPaginas = {};
+
+  // gte = Greater Than or Equal = Maior ou igual que
+  if (minPaginas) busca.numeroPaginas.$gte = minPaginas;
+  // lte = Less Than or Equal = Menor ou igual que
+  if (maxPaginas) busca.numeroPaginas.$lte = maxPaginas;
+
+  if (nomeAutor) {
+    const autor = await autores.findOne({ nome: nomeAutor });
+
+    if (autor !== null) {
+      busca.autor = autor._id;
+    } else {
+      busca = null;
     }
-  };
+  }
 
-
-
+  return busca;
 }
 
 export default LivroController;
